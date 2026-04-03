@@ -1,0 +1,79 @@
+# format: action|id|regex
+# action: deny (always block) | confirm (block unless CLAUDE_ALLOW_DESTRUCTIVE=1)
+#
+# deny    = permanently blocked, no override ever
+# confirm = blocked unless CLAUDE_ALLOW_DESTRUCTIVE=1 is set
+#
+# ─── FILESYSTEM ─────────────────────────────────────────────────────────────
+
+deny|rm_rf_root|(^|[[:space:];|&()])rm([[:space:]]+[^;|&()]*)*-rf([[:space:]]+[^;|&()]*)*[[:space:]]+/([[:space:];|&()]|$)
+confirm|rm_rf_wildcard|(^|[[:space:];|&()])rm([[:space:]]+[^;|&()]*)*-rf([[:space:]]+[^;|&()]*)*[[:space:]]+(\*|/\*|/\.\*|\.\*)([[:space:];|&()]|$)
+deny|dd_block_device|(^|[[:space:];|&()])dd([[:space:]]|$).*of=/dev/(sd[a-z]+|nvme[0-9]+n[0-9]+|vd[a-z]+|xvd[a-z]+|mmcblk[0-9]+)
+confirm|disk_tools|(^|[[:space:];|&()])(mkfs(\.[[:alnum:]_+-]+)?|fdisk|sfdisk|cfdisk|parted)([[:space:];|&()]|$)
+confirm|chmod_root_recursive|(^|[[:space:];|&()])chmod[[:space:]]+-R[[:space:]]+/([[:space:];|&()]|$)
+confirm|chown_root_recursive|(^|[[:space:];|&()])chown[[:space:]]+-R[[:space:]]+/([[:space:];|&()]|$)
+confirm|fork_bomb|:\(\)[[:space:]]*\{[[:space:]]*:[[:space:]]*\|[[:space:]]*:[[:space:]]*&[[:space:]]*\}
+
+# ─── POWER / SYSTEM ─────────────────────────────────────────────────────────
+
+confirm|power_ops|(^|[[:space:];|&()])(shutdown|reboot|poweroff|halt)($|[[:space:];|&()])
+
+# ─── PACKAGE MANAGEMENT ─────────────────────────────────────────────────────
+
+confirm|apt_remove|(^|[[:space:];|&()])apt(-get)?[[:space:]]+(remove|purge|autoremove)([[:space:];|&()]|$)
+confirm|dpkg_remove|(^|[[:space:];|&()])dpkg[[:space:]]+(--remove|--purge|-r|-P)([[:space:];|&()]|$)
+confirm|pip_uninstall|(^|[[:space:];|&()])pip([0-9]+)?[[:space:]]+uninstall([[:space:];|&()]|$)
+confirm|npm_uninstall_global|(^|[[:space:];|&()])npm[[:space:]]+(uninstall|remove)[[:space:]]+(-g|--global)([[:space:];|&()]|$)
+confirm|snap_remove|(^|[[:space:];|&()])snap[[:space:]]+(remove|purge)([[:space:];|&()]|$)
+
+# ─── SERVICE / SYSTEMD ──────────────────────────────────────────────────────
+
+confirm|systemctl_stop|(^|[[:space:];|&()])systemctl[[:space:]]+(stop|disable|mask|kill)([[:space:];|&()]|$)
+confirm|service_stop|(^|[[:space:];|&()])service[[:space:]]+[^[:space:]]+[[:space:]]+(stop|restart)([[:space:];|&()]|$)
+deny|systemctl_disable_critical|(^|[[:space:];|&()])systemctl[[:space:]]+(disable|mask)[[:space:]]+(ssh|ufw|fail2ban|cron|networking)([[:space:];|&()]|$)
+
+# ─── FIREWALL / NETWORK ─────────────────────────────────────────────────────
+
+deny|ufw_disable|(^|[[:space:];|&()])ufw[[:space:]]+disable([[:space:];|&()]|$)
+deny|iptables_flush|(^|[[:space:];|&()])iptables[[:space:]]+-F([[:space:];|&()]|$)
+confirm|ufw_allow_all|(^|[[:space:];|&()])ufw[[:space:]]+allow[[:space:]]+(any|all|from[[:space:]]+any)([[:space:];|&()]|$)
+confirm|curl_pipe_bash|(^|[[:space:];|&()])(curl|wget)[[:space:]].*\|[[:space:]]*(sudo[[:space:]]+)?(bash|sh|zsh)([[:space:];|&()]|$)
+confirm|nc_send|(^|[[:space:];|&()])nc[[:space:]]+(-[^[:space:]]*[^l][^[:space:]]*[[:space:]]+|)([0-9]{1,3}\.){3}[0-9]{1,3}([[:space:];|&()]|$)
+confirm|rsync_remote|(^|[[:space:];|&()])rsync[[:space:]]+.*[^:]+:[^:]+([[:space:];|&()]|$)
+
+# ─── CREDENTIALS / SECRETS ──────────────────────────────────────────────────
+
+deny|cat_env_files|(^|[[:space:];|&()])cat[[:space:]]+.*\.(env|pem|key|p12|pfx|secret)([[:space:];|&()]|$)
+deny|print_ssh_private|(^|[[:space:];|&()])(cat|less|more|head|tail)[[:space:]]+.*\.ssh/(id_rsa|id_ed25519|id_ecdsa)([^\.][^p][^u][^b]|$)
+deny|env_dump|(^|[[:space:];|&()])env([[:space:];|&()]|$)
+deny|printenv_all|(^|[[:space:];|&()])printenv([[:space:];|&()]|$)
+confirm|history_clear|(^|[[:space:];|&()])history[[:space:]]+-c([[:space:];|&()]|$)
+
+# ─── AUDIT DATA PROTECTION (SecureMind) ─────────────────────────────────────
+
+deny|rm_securemind_reports|(^|[[:space:];|&()])rm([[:space:]]+[^;|&()]*)*[[:space:]]+(~/securemind|/home/[^/]+/securemind)/reports([[:space:];|&()]|$)
+deny|rm_securemind_clients|(^|[[:space:];|&()])rm([[:space:]]+[^;|&()]*)*[[:space:]]+(~/securemind|/home/[^/]+/securemind)/clients([[:space:];|&()]|$)
+confirm|rm_securemind_any|(^|[[:space:];|&()])rm([[:space:]]+[^;|&()]*)*[[:space:]]+(~/securemind|/home/[^/]+/securemind)([[:space:];|&()]|$)
+
+# ─── PRIVILEGE ESCALATION ───────────────────────────────────────────────────
+
+confirm|sudo_su|(^|[[:space:];|&()])sudo[[:space:]]+(-i|-s|su)([[:space:];|&()]|$)
+deny|visudo|(^|[[:space:];|&()])visudo([[:space:];|&()]|$)
+deny|edit_sudoers|(^|[[:space:];|&()])(nano|vim|vi|emacs|tee)[[:space:]]+/etc/sudoers([[:space:];|&()]|$)
+confirm|sudo_bash|(^|[[:space:];|&()])sudo[[:space:]]+(bash|sh|zsh)([[:space:];|&()]|$)
+
+# ─── CRON ───────────────────────────────────────────────────────────────────
+
+confirm|crontab_remove|(^|[[:space:];|&()])crontab[[:space:]]+-r([[:space:];|&()]|$)
+confirm|cron_dir_edit|(^|[[:space:];|&()])(nano|vim|vi|tee)[[:space:]]+/etc/cron([[:space:];|&()]|$)
+
+# ─── SSH ────────────────────────────────────────────────────────────────────
+
+deny|rm_ssh_keys|(^|[[:space:];|&()])rm([[:space:]]+[^;|&()]*)*[[:space:]].*\.ssh/([[:space:];|&()]|$)
+deny|edit_sshd_config|(^|[[:space:];|&()])(nano|vim|vi|tee)[[:space:]]+/etc/ssh/sshd_config([[:space:];|&()]|$)
+confirm|ssh_keygen_overwrite|(^|[[:space:];|&()])ssh-keygen([[:space:]]+[^;|&()]*)*-f[[:space:]]+[^;|&()]*id_(rsa|ed25519|ecdsa)([[:space:];|&()]|$)
+
+# ─── GIT ────────────────────────────────────────────────────────────────────
+
+confirm|git_reset_hard|(^|[[:space:];|&()])git[[:space:]]+reset[[:space:]]+--hard([[:space:];|&()]|$)
+confirm|git_clean_fdx|(^|[[:space:];|&()])git[[:space:]]+clean([[:space:]]+[^;|&()]*)*([[:space:]]-f[^[:space:]]*){1,}([[:space:]]-d[^[:space:]]*)?([[:space:]]-x[^[:space:]]*)?
