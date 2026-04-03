@@ -88,7 +88,30 @@ else
     info "Claude credentials found — good to go."
 fi
 
-# --- 6. Create Remote Control start script ---
+# --- 6. Pre-accept trust dialog ---
+info "Pre-accepting workspace trust dialog..."
+sudo -u "$SERVICE_USER" python3 - <<PYEOF
+import json, os
+path = os.path.expanduser('~/.claude.json')
+data = {}
+if os.path.exists(path):
+    with open(path) as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            pass
+if 'projects' not in data:
+    data['projects'] = {}
+home = '/home/$SERVICE_USER'
+if home not in data['projects']:
+    data['projects'][home] = {}
+data['projects'][home]['hasTrustDialogAccepted'] = True
+with open(path, 'w') as f:
+    json.dump(data, f, indent=2)
+print("hasTrustDialogAccepted set to true for", home)
+PYEOF
+
+# --- 7. Create Remote Control start script ---
 info "Creating start-claude-remote.sh..."
 RC_SCRIPT="/home/$SERVICE_USER/start-claude-remote.sh"
 
@@ -126,7 +149,7 @@ SCRIPT
 chmod +x "$RC_SCRIPT"
 chown "$SERVICE_USER:$SERVICE_USER" "$RC_SCRIPT"
 
-# --- 7. Create systemd service ---
+# --- 8. Create systemd service ---
 info "Creating systemd service..."
 cat > "/etc/systemd/system/$SERVICE_NAME.service" <<SERVICE
 [Unit]
@@ -151,7 +174,7 @@ RestartSec=10
 WantedBy=multi-user.target
 SERVICE
 
-# --- 8. Enable and start ---
+# --- 9. Enable and start ---
 info "Enabling and starting service..."
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
