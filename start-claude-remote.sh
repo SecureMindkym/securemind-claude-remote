@@ -5,7 +5,7 @@ export NVM_DIR="/home/securemind/.nvm"
 source "$NVM_DIR/nvm.sh"
 export HOME="/home/securemind"
 
-SESSION="claude-remote"
+SESSION="claude-remote-$(hostname)"
 
 # Kill existing session if running
 tmux kill-session -t "$SESSION" 2>/dev/null || true
