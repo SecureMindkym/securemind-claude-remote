@@ -71,8 +71,8 @@ mkdir -p "$GUARD_DIR"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-install -m 755 "$SCRIPT_DIR/guard/claude-guard-shell.sh" "$GUARD_DIR/claude-guard-shell.sh"
-install -m 644 "$SCRIPT_DIR/guard/destructive_matchers.rules" "$GUARD_DIR/destructive_matchers.rules"
+install -m 755 "$SCRIPT_DIR/claude-guard-shell.sh" "$GUARD_DIR/claude-guard-shell.sh"
+install -m 644 "$SCRIPT_DIR/destructive_matchers.rules" "$GUARD_DIR/destructive_matchers.rules"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$GUARD_DIR"
 
 info "Guard shell installed to: $GUARD_DIR"
@@ -103,14 +103,14 @@ export HOME="/home/$SERVICE_USER"
 export SHELL="$GUARD_DIR/claude-guard-shell.sh"
 export CLAUDE_GUARD_RULES="$GUARD_DIR/destructive_matchers.rules"
 
-SESSION="claude-remote"
+SESSION="claude-remote-\$(hostname)"
 
 # Kill existing session if running
 tmux kill-session -t "\$SESSION" 2>/dev/null || true
 
 # Start new tmux session with guard shell + claude remote control
 tmux new-session -d -s "\$SESSION" -x 220 -y 50
-tmux send-keys -t "\$SESSION" "SHELL=$GUARD_DIR/claude-guard-shell.sh CLAUDE_GUARD_RULES=$GUARD_DIR/destructive_matchers.rules claude --remote-control --dangerously-skip-permissions" Enter
+tmux send-keys -t "\$SESSION" "SHELL=$GUARD_DIR/claude-guard-shell.sh CLAUDE_GUARD_RULES=$GUARD_DIR/destructive_matchers.rules claude --remote-control --dangerously-skip-permissions --name \"\$(hostname)\"" Enter
 
 echo ""
 echo "Claude Code Remote Control started in tmux session: \$SESSION"
@@ -143,7 +143,7 @@ Environment="HOME=$WORK_DIR"
 Environment="SHELL=$GUARD_DIR/claude-guard-shell.sh"
 Environment="CLAUDE_GUARD_RULES=$GUARD_DIR/destructive_matchers.rules"
 ExecStart=$RC_SCRIPT
-ExecStop=/usr/bin/tmux kill-session -t claude-remote
+ExecStop=/usr/bin/tmux kill-session -t claude-remote-$(hostname)
 Restart=on-failure
 RestartSec=10
 
@@ -176,7 +176,7 @@ echo "       claude login"
 echo "       sudo systemctl restart $SERVICE_NAME"
 echo ""
 echo "  2. View the remote control session:"
-echo "       tmux attach -t claude-remote"
+echo "       tmux attach -t claude-remote-$(hostname)"
 echo "       (Ctrl+B then D to detach and keep running)"
 echo ""
 echo "  3. On your phone:"
@@ -189,5 +189,5 @@ echo "Useful commands:"
 echo "  sudo systemctl status $SERVICE_NAME"
 echo "  sudo systemctl restart $SERVICE_NAME"
 echo "  sudo systemctl stop $SERVICE_NAME"
-echo "  tmux attach -t claude-remote"
+echo "  tmux attach -t claude-remote-$(hostname)"
 echo ""
