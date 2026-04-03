@@ -12,7 +12,7 @@ tmux kill-session -t "$SESSION" 2>/dev/null || true
 
 # Start new tmux session running claude --remote-control
 tmux new-session -d -s "$SESSION" -x 220 -y 50
-tmux send-keys -t "$SESSION" "claude --remote-control" Enter
+tmux send-keys -t "$SESSION" "claude --remote-control --name \"$(hostname)\"" Enter
 
 echo "Claude Code Remote Control started in tmux session: $SESSION"
 echo "View session: tmux attach -t $SESSION"
