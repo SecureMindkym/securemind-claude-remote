@@ -1,3 +1,16 @@
 {
-  "trustWorkspace": true
+  "trustWorkspace": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NonInteractive -File C:\\Base\\windows\\claude-guard-shell.ps1"
+          }
+        ]
+      }
+    ]
+  }
 }

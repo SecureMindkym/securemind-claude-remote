@@ -1,0 +1,122 @@
+# =============================================================================
+# destructive_matchers.rules — SecureMind Claude Guard (Windows Port)
+# format:  action|id|regex   (.NET regex syntax)
+#
+# deny    = permanently blocked, no override ever
+# confirm = blocked unless CLAUDE_ALLOW_DESTRUCTIVE=1 is set
+# =============================================================================
+
+# ─── FILESYSTEM (Linux-style, e.g. via Git Bash / WSL) ───────────────────────
+
+deny|rm_rf_root|(^|[\s;|&()])rm(\s+[^\s;|&()]*)*\s+-rf\s+/(\s|$)
+confirm|rm_rf_wildcard|(^|[\s;|&()])rm(\s+[^\s;|&()]*)*\s+-rf\s+(\*|/\*|/\.\*|\.\*)(\s|$)
+deny|dd_block_device|(^|[\s;|&()])dd(\s|$).*of=/dev/(sd[a-z]+|nvme[0-9]+n[0-9]+|vd[a-z]+|xvd[a-z]+|mmcblk[0-9]+)
+confirm|disk_tools|(^|[\s;|&()])(mkfs(\.[a-zA-Z0-9_+\-]+)?|fdisk|sfdisk|cfdisk|parted)(\s|$)
+confirm|chmod_root_recursive|(^|[\s;|&()])chmod\s+-R\s+/(\s|$)
+confirm|chown_root_recursive|(^|[\s;|&()])chown\s+-R\s+/(\s|$)
+confirm|fork_bomb|:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}
+
+# ─── FILESYSTEM (Windows-native) ─────────────────────────────────────────────
+
+deny|format_drive|(^|[\s;|&()])format\s+[a-zA-Z]:
+deny|del_windows_system|(^|[\s;|&()])(del|erase)\s+.*\/[sS].*C:\\Windows
+deny|rd_windows_system|(^|[\s;|&()])(rd|rmdir)\s+.*\/[sS].*C:\\Windows
+deny|remove_item_system_recurse|Remove-Item\s+.*(C:\\Windows|C:\\System32).*(Recurse|Force)
+confirm|remove_item_recurse|(^|[\s;|&()])Remove-Item\s+.*(-Recurse|-r\b)
+confirm|del_recursive|(^|[\s;|&()])del\s+.*/[sS]
+
+# ─── POWER / SYSTEM ──────────────────────────────────────────────────────────
+
+confirm|power_ops_unix|(^|[\s;|&()])(shutdown|reboot|poweroff|halt)($|\s)
+confirm|power_ops_windows|(^|[\s;|&()])(shutdown\.exe|Restart-Computer|Stop-Computer)(\s|$)
+
+# ─── PACKAGE MANAGEMENT (Linux) ──────────────────────────────────────────────
+
+confirm|apt_remove|(^|[\s;|&()])apt(-get)?\s+(remove|purge|autoremove)(\s|$)
+confirm|dpkg_remove|(^|[\s;|&()])dpkg\s+(--remove|--purge|-r\b|-P\b)(\s|$)
+confirm|pip_uninstall|(^|[\s;|&()])pip([0-9]+)?\s+uninstall(\s|$)
+confirm|npm_uninstall_global|(^|[\s;|&()])npm\s+(uninstall|remove)\s+(-g|--global)(\s|$)
+confirm|snap_remove|(^|[\s;|&()])snap\s+(remove|purge)(\s|$)
+
+# ─── PACKAGE MANAGEMENT (Windows) ────────────────────────────────────────────
+
+confirm|winget_uninstall|(^|[\s;|&()])winget\s+uninstall(\s|$)
+confirm|choco_uninstall|(^|[\s;|&()])choco(latey)?\s+uninstall(\s|$)
+confirm|scoop_uninstall|(^|[\s;|&()])scoop\s+uninstall(\s|$)
+
+# ─── SERVICE MANAGEMENT (Linux) ──────────────────────────────────────────────
+
+confirm|systemctl_stop|(^|[\s;|&()])systemctl\s+(stop|disable|mask|kill)(\s|$)
+confirm|service_stop|(^|[\s;|&()])service\s+\S+\s+(stop|restart)(\s|$)
+deny|systemctl_disable_critical|(^|[\s;|&()])systemctl\s+(disable|mask)\s+(ssh|ufw|fail2ban|cron|networking)(\s|$)
+
+# ─── SERVICE MANAGEMENT (Windows) ────────────────────────────────────────────
+
+confirm|stop_service_ps|(^|[\s;|&()])Stop-Service\s
+confirm|net_stop|(^|[\s;|&()])net\s+stop\s
+deny|sc_delete_critical|(^|[\s;|&()])sc\s+(delete|stop)\s+(WinDefend|MpsSvc|EventLog|wuauserv|Winmgmt)
+confirm|sc_stop|(^|[\s;|&()])sc\s+stop\s
+
+# ─── FIREWALL / NETWORK ──────────────────────────────────────────────────────
+
+deny|ufw_disable|(^|[\s;|&()])ufw\s+disable(\s|$)
+deny|iptables_flush|(^|[\s;|&()])iptables\s+-F(\s|$)
+deny|disable_windows_firewall|netsh\s+advfirewall\s+set\s+.*(state\s+off|opmode\s+disable)
+deny|disable_defender|Set-MpPreference\s+.*DisableRealtimeMonitoring\s+\$true
+confirm|ufw_allow_all|(^|[\s;|&()])ufw\s+allow\s+(any|all|from\s+any)(\s|$)
+confirm|curl_pipe_bash|(^|[\s;|&()])(curl|wget)\s.*\|\s*(sudo\s+)?(bash|sh|zsh)(\s|$)
+confirm|invoke_expression_web|Invoke-Expression\s*\(?\s*(Invoke-WebRequest|iwr\b|curl\b|wget\b)
+confirm|rsync_remote|(^|[\s;|&()])rsync\s+.*[^:]+:[^:]+(\s|$)
+confirm|nc_send|(^|[\s;|&()])nc\s+(-[^\s]*[^l][^\s]*\s+|)([0-9]{1,3}\.){3}[0-9]{1,3}(\s|$)
+
+# ─── CREDENTIALS / SECRETS ───────────────────────────────────────────────────
+
+deny|cat_env_files|(^|[\s;|&()])cat\s+.*\.(env|pem|key|p12|pfx|secret)(\s|$)
+deny|print_ssh_private|(^|[\s;|&()])(cat|less|more|head|tail|Get-Content)\s+.*\.ssh/(id_rsa|id_ed25519|id_ecdsa)([^.p]|$)
+deny|env_dump|(^|[\s;|&()])env(\s|$)
+deny|printenv_all|(^|[\s;|&()])printenv(\s|$)
+confirm|history_clear|(^|[\s;|&()])history\s+-c(\s|$)
+deny|get_content_creds|Get-Content\s+.*(credential|password|\.env|\.secret)(\s|$)
+
+# ─── REGISTRY (Windows) ──────────────────────────────────────────────────────
+
+deny|reg_delete_hklm|(^|[\s;|&()])reg\s+delete\s+HKLM
+deny|reg_delete_hkcu|(^|[\s;|&()])reg\s+delete\s+HKCU
+confirm|reg_add|(^|[\s;|&()])reg\s+add\s
+deny|remove_item_hklm|Remove-Item\s+.*HKLM:
+confirm|set_item_property_registry|Set-ItemProperty\s+.*HK(LM|CU):
+
+# ─── PRIVILEGE ESCALATION ────────────────────────────────────────────────────
+
+confirm|sudo_su|(^|[\s;|&()])sudo\s+(-i|-s\b|su\b)(\s|$)
+deny|visudo|(^|[\s;|&()])visudo(\s|$)
+deny|edit_sudoers|(^|[\s;|&()])(nano|vim|vi|emacs|tee)\s+/etc/sudoers(\s|$)
+confirm|sudo_bash|(^|[\s;|&()])sudo\s+(bash|sh|zsh)(\s|$)
+deny|add_local_admin|(^|[\s;|&()])net\s+localgroup\s+administrators\s+.*\/add
+deny|add_local_admin_ps|Add-LocalGroupMember\s+.*Administrators
+
+# ─── AUDIT DATA PROTECTION (SecureMind) ──────────────────────────────────────
+
+deny|rm_securemind_reports|(^|[\s;|&()])rm(\s+[^\s;|&()]*)*\s+(~/securemind|/home/[^/]+/securemind)/reports(\s|$)
+deny|rm_securemind_clients|(^|[\s;|&()])rm(\s+[^\s;|&()]*)*\s+(~/securemind|/home/[^/]+/securemind)/clients(\s|$)
+confirm|rm_securemind_any|(^|[\s;|&()])rm(\s+[^\s;|&()]*)*\s+(~/securemind|/home/[^/]+/securemind)(\s|$)
+deny|del_securemind_reports_win|Remove-Item\s+.*securemind.*(reports|clients)
+
+# ─── SSH ─────────────────────────────────────────────────────────────────────
+
+deny|rm_ssh_keys|(^|[\s;|&()])rm(\s+[^\s;|&()]*)*\s.*\.ssh/(\s|$)
+deny|edit_sshd_config|(^|[\s;|&()])(nano|vim|vi|tee)\s+/etc/ssh/sshd_config(\s|$)
+confirm|ssh_keygen_overwrite|(^|[\s;|&()])ssh-keygen(\s+[^\s;|&()]*)*-f\s+[^\s;|&()]*id_(rsa|ed25519|ecdsa)(\s|$)
+deny|del_windows_ssh_keys|Remove-Item\s+.*\.ssh\\(id_rsa|id_ed25519|id_ecdsa)
+
+# ─── CRON / TASK SCHEDULER ───────────────────────────────────────────────────
+
+confirm|crontab_remove|(^|[\s;|&()])crontab\s+-r(\s|$)
+confirm|cron_dir_edit|(^|[\s;|&()])(nano|vim|vi|tee)\s+/etc/cron(\s|$)
+deny|unregister_claude_task|Unregister-ScheduledTask\s+.*claude
+
+# ─── GIT ─────────────────────────────────────────────────────────────────────
+
+confirm|git_reset_hard|(^|[\s;|&()])git\s+reset\s+--hard(\s|$)
+confirm|git_clean_force|(^|[\s;|&()])git\s+clean(\s+[^\s;|&()]*)*\s-f
+confirm|git_push_force|(^|[\s;|&()])git\s+push(\s+[^\s;|&()]*)*--force
