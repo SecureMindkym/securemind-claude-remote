@@ -49,8 +49,18 @@ try {
     exit 0
 }
 
-# Extract the command string from the Bash tool input
+# Extract the command string from the Bash/PowerShell tool input
 $cmd = $hookData.tool_input.command
+
+# Write/Edit tools carry no command - they target a path directly. Normalise to
+# a synthetic "WRITE_FILE <path>" line so path-based rules still apply, or the
+# file tools become an unguarded route to the rules file itself.
+if (-not $cmd) {
+    $path = $hookData.tool_input.file_path
+    if (-not $path) { $path = $hookData.tool_input.notebook_path }
+    if ($path) { $cmd = "WRITE_FILE $path" }
+}
+
 if (-not $cmd) { exit 0 }
 
 # --- CLAUDE_ALLOW_DESTRUCTIVE override ---

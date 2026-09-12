@@ -68,11 +68,19 @@ git clone https://github.com/SecureMindkym/securemind-claude-remote.git C:\Base\
 Copy-Item C:\Base\securemind-claude-remote\windows\* C:\Base\ -Recurse
 ```
 
+> Copy **only** `windows\*`. The repo root also contains a `destructive_matchers.rules`
+> written in POSIX regex for Linux — copying it over the Windows one leaves you with a
+> ruleset that silently matches nothing, because .NET regex has no `[[:space:]]` classes.
+
 2. Run the setup script as Administrator:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File C:\Base\setup.ps1
 ```
+
+Setup writes `C:\Base\.claude\settings.json` (the hook config that activates the guard)
+and then verifies the guard actually blocks a known-dangerous command before reporting
+success. If that check fails, the guard is not protecting you — do not start the service.
 
 3. Log in to Claude if you haven't already:
 
@@ -94,18 +102,22 @@ Claude app → menu → Pair with your desktop
 
 ### How the Windows guard works
 
-The guard runs as a `PreToolUse` hook configured in `.claude\settings.json`. When Claude attempts any Bash tool call, Windows executes `claude-guard-shell.ps1` first — it reads the command from Claude's hook JSON and checks it against `destructive_matchers.rules` using .NET regex. If a rule matches, it exits with code 2 and Claude sees the block message instead of running the command.
+The guard runs as a `PreToolUse` hook configured in `.claude\settings.json`, written by
+`setup.ps1`. When Claude attempts a shell or file-write tool call, Windows executes
+`claude-guard-shell.ps1` first — it reads the command from Claude's hook JSON and checks
+it against `destructive_matchers.rules` using .NET regex. If a rule matches, it exits with
+code 2 and Claude sees the block message instead of running the command.
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell|Write|Edit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NonInteractive -File C:\\Base\\windows\\claude-guard-shell.ps1"
+            "command": "powershell.exe -NonInteractive -ExecutionPolicy Bypass -File C:\\Base\\claude-guard-shell.ps1"
           }
         ]
       }
@@ -113,6 +125,18 @@ The guard runs as a `PreToolUse` hook configured in `.claude\settings.json`. Whe
   }
 }
 ```
+
+The matcher covers more than `Bash` deliberately:
+
+- **`PowerShell`** — on Windows this, not Bash, is the shell tool Claude reaches for first.
+  A `Bash`-only matcher leaves the entire native shell surface unguarded.
+- **`Write` / `Edit` / `NotebookEdit`** — these carry a `file_path` rather than a `command`.
+  Without them, Claude can edit `destructive_matchers.rules` directly and disarm the guard.
+  The guard normalises these to a synthetic `WRITE_FILE <path>` line so path rules apply.
+
+Because the hook lives in `C:\Base\.claude\settings.json`, Claude **must** be started with
+`C:\Base` as its working directory or the hook is never loaded. `start-claude-remote.ps1`
+handles this. If `C:\Base\logs\guard.log` is never created, the hook is not loading.
 
 ---
 
