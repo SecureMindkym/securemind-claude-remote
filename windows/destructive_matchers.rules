@@ -19,9 +19,9 @@ confirm|fork_bomb|:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}
 # ─── FILESYSTEM (Windows-native) ─────────────────────────────────────────────
 
 deny|format_drive|(^|[\s;|&()])format\s+[a-zA-Z]:
-deny|del_windows_system|(^|[\s;|&()])(del|erase)\s+.*\/[sS].*C:\\Windows
-deny|rd_windows_system|(^|[\s;|&()])(rd|rmdir)\s+.*\/[sS].*C:\\Windows
-deny|remove_item_system_recurse|Remove-Item\s+.*(C:\\Windows|C:\\System32).*(Recurse|Force)
+deny|del_windows_system|(^|[\s;|&()])(del|erase)\s(?=.*\/[sS])(?=.*C:\\Windows)
+deny|rd_windows_system|(^|[\s;|&()])(rd|rmdir)\s(?=.*\/[sS])(?=.*C:\\Windows)
+deny|remove_item_system_recurse|Remove-Item\s(?=.*(-Recurse|-Force))(?=.*(C:\\Windows|C:\\System32))
 confirm|remove_item_recurse|(^|[\s;|&()])Remove-Item\s+.*(-Recurse|-r\b)
 confirm|del_recursive|(^|[\s;|&()])del\s+.*/[sS]
 
@@ -120,3 +120,58 @@ deny|unregister_claude_task|Unregister-ScheduledTask\s+.*claude
 confirm|git_reset_hard|(^|[\s;|&()])git\s+reset\s+--hard(\s|$)
 confirm|git_clean_force|(^|[\s;|&()])git\s+clean(\s+[^\s;|&()]*)*\s-f
 confirm|git_push_force|(^|[\s;|&()])git\s+push(\s+[^\s;|&()]*)*--force
+
+# ─── GUARD SELF-PROTECTION ───────────────────────────────────────────────────
+# Editing the guard's own config is 'confirm', so CLAUDE_ALLOW_DESTRUCTIVE=1
+# lifts it for intentional rule maintenance.
+#
+# Be aware this makes the override qualitatively different here than elsewhere:
+# other confirm rules permit a single destructive act, but a session holding the
+# override can rewrite this ruleset to nothing, and the guard stays disarmed
+# after the flag is gone. Only set the override when you are the one editing.
+#
+# Outright deletion of the install directory stays 'deny' - that is not editing.
+
+confirm|guard_tamper_cmd|(Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|New-Item|del|erase|rm|mv|cp)\s+.*(destructive_matchers\.rules|claude-guard-shell\.ps1|start-claude-remote\.ps1)
+confirm|guard_tamper_redirect|>>?\s*[^\s]*(destructive_matchers\.rules|claude-guard-shell\.ps1)
+confirm|guard_settings_tamper|(Set-Content|Add-Content|Out-File|Remove-Item|del|rm|>)\s*.*C:\\Base\\\.claude
+deny|guard_dir_delete|(Remove-Item|rd|rmdir|rm)\s+.*C:\\Base(\s|\\|$)
+confirm|guard_file_write|WRITE_FILE\s+.*(destructive_matchers\.rules|claude-guard-shell\.ps1|start-claude-remote\.ps1|C:\\Base\\\.claude)
+confirm|guard_env_disable|(Set-Item|setx|\$env:)\s*.*CLAUDE_GUARD_RULES
+
+# ─── CREDENTIAL DUMPING (Windows) ────────────────────────────────────────────
+
+deny|reg_save_hive|(^|[\s;|&()])reg\s+(save|export)\s+HK(LM|CU|EY_LOCAL_MACHINE)
+deny|reg_dump_sam|(^|[\s;|&()])reg\s+\S+\s+.*\\(SAM|SECURITY)(\s|\\|$)
+deny|lsass_dump|(procdump|comsvcs\.dll|MiniDump|Out-Minidump).*lsass|lsass.*(procdump|MiniDump)
+deny|get_content_secret_ext|Get-Content\s+.*\.(pem|key|p12|pfx|env|secret|ppk)(\s|$)
+deny|type_secrets|(^|[\s;|&()])type\s+.*\.(env|pem|key|p12|pfx|secret)(\s|$)
+deny|dump_credential_manager|(cmdkey\s+\/list|vaultcmd\s+\/list)
+
+# ─── BACKUP / RECOVERY DESTRUCTION ───────────────────────────────────────────
+
+deny|vssadmin_delete_shadows|(^|[\s;|&()])vssadmin\s+delete\s+shadows
+deny|wmic_shadowcopy_delete|(^|[\s;|&()])wmic\s+shadowcopy\s+delete
+deny|wbadmin_delete|(^|[\s;|&()])wbadmin\s+delete\s+(catalog|systemstatebackup|backup)
+deny|bcdedit_disable_recovery|(^|[\s;|&()])bcdedit\s+.*(recoveryenabled\s+no|bootstatuspolicy\s+ignoreallfailures)
+confirm|cipher_wipe|(^|[\s;|&()])cipher\s+\/w
+
+# ─── OBFUSCATION / EVASION ───────────────────────────────────────────────────
+# Encoded commands defeat regex inspection entirely - never allow silently.
+
+deny|encoded_command|(^|[\s;|&()])(powershell(\.exe)?|pwsh)\s+(.*\s)?-[eE]([nN]([cC]([oO][dD][eE][dD]([cC][oO][mM][mM][aA][nN][dD])?)?)?)?(\s|$)
+confirm|frombase64_exec|FromBase64String
+confirm|iex_download|(iex|Invoke-Expression)\s*\(?\s*\(?\s*(New-Object\s+Net\.WebClient|Invoke-WebRequest|iwr)
+
+# ─── DEFENDER / SECURITY TOOLING ─────────────────────────────────────────────
+
+deny|defender_exclusion|Add-MpPreference\s+.*Exclusion
+deny|defender_service_disable|(Set-Service|sc\s+config)\s+.*WinDefend
+deny|defender_uninstall|(Uninstall-WindowsFeature|Remove-WindowsFeature)\s+.*Defender
+
+# ─── PRIVILEGE / ACL ─────────────────────────────────────────────────────────
+
+confirm|net_user_add|(^|[\s;|&()])net\s+user\s+\S+\s+.*\/add
+confirm|new_localuser|(^|[\s;|&()])New-LocalUser(\s|$)
+confirm|takeown_force|(^|[\s;|&()])takeown\s+.*\/[fF]
+confirm|icacls_grant|(^|[\s;|&()])icacls\s+.*\/grant
