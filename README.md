@@ -155,6 +155,13 @@ handles this. If `C:\Base\logs\guard.log` is never created, the hook is not load
 | Power | `shutdown`, `reboot`, `Restart-Computer` | confirm |
 | Git destructive | `git reset --hard`, `git clean -fdx` | confirm |
 | Remote send | `nc` to IP, `rsync` to remote | confirm |
+| Credential dumping | `reg save HKLM\SAM`, `procdump` on lsass, `cmdkey /list` | deny (permanent) |
+| Backup destruction | `vssadmin delete shadows`, `wbadmin delete catalog`, `bcdedit` recovery off | deny (permanent) |
+| Defender | `Add-MpPreference -Exclusion*`, disabling `WinDefend` | deny (permanent) |
+| Obfuscation | `powershell -EncodedCommand` (defeats regex inspection) | deny (permanent) |
+| Guard tampering | Deleting `C:\Base` | deny (permanent) |
+| Guard config edits | Editing the rules file, guard script, or `.claude\settings.json` | confirm |
+| ACL / accounts | `takeown /f`, `icacls /grant`, `net user /add` | confirm |
 
 **deny** = always blocked, no override  
 **confirm** = blocked unless `CLAUDE_ALLOW_DESTRUCTIVE=1`
@@ -173,6 +180,25 @@ CLAUDE_ALLOW_DESTRUCTIVE=1 ~/start-claude-remote.sh
 $env:CLAUDE_ALLOW_DESTRUCTIVE='1'
 powershell.exe -File C:\Base\start-claude-remote.ps1
 ```
+
+The override lifts `confirm` rules **only**. `deny` rules are still enforced with it set,
+so a session started with the override can still not disable the firewall, dump `HKLM\SAM`,
+delete shadow copies, or add a Defender exclusion. A `confirm` match also keeps the scan
+going, so a command that trips both a `confirm` and a `deny` rule is still blocked.
+
+One caveat: `CLAUDE_ALLOW_DESTRUCTIVE=1` does permit edits to the guard's own rules file.
+That is a broader grant than the other `confirm` rules — a session holding the override can
+rewrite the ruleset, and it stays rewritten after the flag is gone. Set it only while you
+are the one making the edit.
+
+### Verifying the guard
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File C:\Base\windows\guard-test.ps1
+```
+
+Pipes known-dangerous commands to the guard as hook JSON and asserts each is blocked. The
+cases are data and are never executed. Run it after any change to the rules file.
 
 ---
 

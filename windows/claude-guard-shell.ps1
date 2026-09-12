@@ -63,15 +63,13 @@ if (-not $cmd) {
 
 if (-not $cmd) { exit 0 }
 
-# --- CLAUDE_ALLOW_DESTRUCTIVE override ---
-
-if ($env:CLAUDE_ALLOW_DESTRUCTIVE -eq '1') {
-    [Console]::Error.WriteLine("claude-guard: CLAUDE_ALLOW_DESTRUCTIVE=1 set - skipping all rule checks")
-    Write-GuardLog "OVERRIDE (CLAUDE_ALLOW_DESTRUCTIVE=1): $cmd"
-    exit 0
-}
-
 # --- Load and evaluate rules ---
+#
+# CLAUDE_ALLOW_DESTRUCTIVE=1 lifts 'confirm' rules only. It must never lift a
+# 'deny', so the override is applied per-rule below rather than as an early
+# exit - an early exit would make deny and confirm identical.
+
+$allowDestructive = ($env:CLAUDE_ALLOW_DESTRUCTIVE -eq '1')
 
 $rules = Get-Content $RulesFile -ErrorAction Stop | Where-Object {
     $_.Trim() -ne '' -and -not $_.TrimStart().StartsWith('#')
@@ -95,26 +93,29 @@ foreach ($rule in $rules) {
         continue
     }
 
-    if ($matched) {
-        switch ($action) {
-            'deny' {
-                Write-GuardLog "DENIED [$ruleId]: $cmd"
-                [Console]::Error.WriteLine("claude-guard: [DENY] rule '$ruleId' - command permanently blocked")
-                [Console]::Error.WriteLine("cmd: $cmd")
-                exit 2
-            }
-            'confirm' {
-                Write-GuardLog "BLOCKED [$ruleId] (needs CLAUDE_ALLOW_DESTRUCTIVE=1): $cmd"
-                [Console]::Error.WriteLine("claude-guard: [BLOCK] rule '$ruleId' - requires explicit override")
-                [Console]::Error.WriteLine("cmd: $cmd")
-                [Console]::Error.WriteLine("To run intentionally: set CLAUDE_ALLOW_DESTRUCTIVE=1 and restart Claude")
-                exit 2
-            }
-            default {
-                [Console]::Error.WriteLine("claude-guard: invalid action '$action' in rules file (rule: $ruleId)")
-                exit 2
-            }
+    if (-not $matched) { continue }
+
+    if ($action -eq 'deny') {
+        Write-GuardLog "DENIED [$ruleId]: $cmd"
+        [Console]::Error.WriteLine("claude-guard: [DENY] rule '$ruleId' - command permanently blocked")
+        [Console]::Error.WriteLine("cmd: $cmd")
+        exit 2
+    }
+    elseif ($action -eq 'confirm') {
+        if ($allowDestructive) {
+            # Overridden, but keep scanning - a later deny must still win.
+            Write-GuardLog "OVERRIDE [$ruleId] (CLAUDE_ALLOW_DESTRUCTIVE=1): $cmd"
+            continue
         }
+        Write-GuardLog "BLOCKED [$ruleId] (needs CLAUDE_ALLOW_DESTRUCTIVE=1): $cmd"
+        [Console]::Error.WriteLine("claude-guard: [BLOCK] rule '$ruleId' - requires explicit override")
+        [Console]::Error.WriteLine("cmd: $cmd")
+        [Console]::Error.WriteLine("To run intentionally: set CLAUDE_ALLOW_DESTRUCTIVE=1 and restart Claude")
+        exit 2
+    }
+    else {
+        [Console]::Error.WriteLine("claude-guard: invalid action '$action' in rules file (rule: $ruleId)")
+        exit 2
     }
 }
 
