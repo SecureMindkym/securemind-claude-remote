@@ -3,11 +3,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell|Write|Edit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NonInteractive -File C:\\Base\\windows\\claude-guard-shell.ps1"
+            "command": "powershell.exe -NonInteractive -ExecutionPolicy Bypass -File C:\\Base\\claude-guard-shell.ps1"
           }
         ]
       }

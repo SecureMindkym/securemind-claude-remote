@@ -110,6 +110,59 @@ Write-Step "Setting CLAUDE_GUARD_RULES environment variable..."
 $env:CLAUDE_GUARD_RULES = $RULES_FILE
 Write-Step "CLAUDE_GUARD_RULES = $RULES_FILE"
 
+# --- 8. Install the PreToolUse hook config ---
+# Without this file the guard is never invoked and the machine is unprotected,
+# so treat a failure here as fatal rather than warning and continuing.
+
+Write-Step "Installing guard hook config..."
+$CLAUDE_DIR     = "$BASE_DIR\.claude"
+$SETTINGS_FILE  = "$CLAUDE_DIR\settings.json"
+New-Item -ItemType Directory -Path $CLAUDE_DIR -Force | Out-Null
+
+$hookCommand = "powershell.exe -NonInteractive -ExecutionPolicy Bypass -File $GUARD_PS1"
+$settings = [ordered]@{
+    trustWorkspace = $true
+    hooks = [ordered]@{
+        PreToolUse = @(
+            [ordered]@{
+                # Bash alone is not enough on Windows: the PowerShell tool is the
+                # primary shell, and Write/Edit would otherwise be an unguarded
+                # route to the rules file itself.
+                matcher = "Bash|PowerShell|Write|Edit|NotebookEdit"
+                hooks = @(
+                    [ordered]@{ type = "command"; command = $hookCommand }
+                )
+            }
+        )
+    }
+}
+
+if (Test-Path $SETTINGS_FILE) {
+    $backup = "$SETTINGS_FILE.bak"
+    Copy-Item $SETTINGS_FILE $backup -Force
+    Write-Warn "Existing settings.json backed up to $backup"
+}
+
+$settings | ConvertTo-Json -Depth 10 | Set-Content -Path $SETTINGS_FILE -Encoding UTF8
+
+try {
+    $null = Get-Content $SETTINGS_FILE -Raw | ConvertFrom-Json
+} catch {
+    Write-Fail "Wrote $SETTINGS_FILE but it is not valid JSON - guard would not load."
+}
+Write-Step "Hook config: $SETTINGS_FILE"
+
+# --- 9. Verify the guard actually blocks ---
+
+Write-Step "Verifying guard blocks a known-dangerous command..."
+$probe = '{"tool_name":"Bash","tool_input":{"command":"ufw disable"}}'
+$probe | & powershell.exe -NonInteractive -ExecutionPolicy Bypass -File $GUARD_PS1 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 2) {
+    Write-Step "Guard verified - dangerous command blocked (exit 2)."
+} else {
+    Write-Fail "Guard did NOT block a known-dangerous command (exit $LASTEXITCODE). Check $RULES_FILE."
+}
+
 # --- Done ---
 
 Write-Host ""
