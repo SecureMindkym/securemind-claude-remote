@@ -68,44 +68,58 @@ git clone https://github.com/SecureMindkym/securemind-claude-remote.git C:\Base\
 Copy-Item C:\Base\securemind-claude-remote\windows\* C:\Base\ -Recurse
 ```
 
-2. Run the setup script as Administrator:
+2. Run the setup script as Administrator. For a server that should come back by itself after a reboot,
+   pass the local account Claude should run as (you will be asked for its password once; it is stored in the task):
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File C:\Base\setup.ps1
+powershell.exe -ExecutionPolicy Bypass -File C:\Base\setup.ps1 -TaskUser claude
 ```
 
-3. Log in to Claude if you haven't already:
+   Without `-TaskUser` nothing is scheduled and you start it by hand (step 4).
+
+3. Log in to Claude **as that same account** (the login lives in its profile):
 
 ```powershell
-claude login
+claude auth login
 ```
+
+   It prints a URL; open it anywhere, sign in, paste the code back. This works over a remote shell too
+   (no browser needed on the server).
 
 4. Start Claude Code Remote Control:
 
 ```powershell
-powershell.exe -File C:\Base\start-claude-remote.ps1
+Start-ScheduledTask ClaudeRemoteControl            # if you used -TaskUser
+powershell.exe -File C:\Base\start-claude-remote.ps1   # otherwise
 ```
 
-5. Pair your phone:
+5. The machine appears in the Claude app under its computer name.
 
-```
-Claude app → menu → Pair with your desktop
-```
+### Why a machine doesn't show up in the app
+
+A fresh profile stops at first-run screens: onboarding, the `--dangerously-skip-permissions` warning,
+and the folder-trust prompt. Running headless, nobody sees them, so Claude never registers with
+Remote Control. `setup.ps1` pre-accepts them (`hasCompletedOnboarding` and
+`projects["C:/Base"].hasTrustDialogAccepted` in `~\.claude.json`, `skipDangerousModePermissionPrompt`
+in `~\.claude\settings.json`). Once registered, `~\.claude.json` has `hasUsedRemoteControl: true`.
+
+Also avoid an at-logon *interactive* task: it stays dead after a reboot until someone logs in.
+If you move a login to another profile, **move** `.credentials.json`, don't copy it (refresh tokens rotate).
 
 ### How the Windows guard works
 
-The guard runs as a `PreToolUse` hook configured in `.claude\settings.json`. When Claude attempts any Bash tool call, Windows executes `claude-guard-shell.ps1` first — it reads the command from Claude's hook JSON and checks it against `destructive_matchers.rules` using .NET regex. If a rule matches, it exits with code 2 and Claude sees the block message instead of running the command.
+The guard runs as a `PreToolUse` hook configured in `.claude\settings.json`. When Claude attempts any Bash or PowerShell tool call, Windows executes `claude-guard-shell.ps1` first — it reads the command from Claude's hook JSON and checks it against `destructive_matchers.rules` using .NET regex. If a rule matches, it exits with code 2 and Claude sees the block message instead of running the command.
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "powershell.exe -NonInteractive -File C:\\Base\\windows\\claude-guard-shell.ps1"
+            "command": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\\Base\\claude-guard-shell.ps1"
           }
         ]
       }
@@ -120,7 +134,7 @@ The guard runs as a `PreToolUse` hook configured in `.claude\settings.json`. Whe
 
 | Category | Examples | Action |
 |---|---|---|
-| Filesystem | `rm -rf /`, `dd` to block device, `Remove-Item -Recurse C:\` | deny (permanent) |
+| Filesystem | `rm -rf /`, `dd` to block device, `Remove-Item -Recurse C:\`, `Format-Volume`, `Clear-Disk` | deny (permanent) |
 | Audit data | `rm ~/securemind/clients`, `rm ~/securemind/reports` | deny (permanent) |
 | Firewall | `ufw disable`, `iptables -F`, `netsh advfirewall set allprofiles state off` | deny (permanent) |
 | Credentials | `cat .env`, `cat id_rsa`, `printenv`, `reg export HKLM\SAM` | deny (permanent) |
@@ -199,9 +213,7 @@ windows/
   claude-guard-shell.ps1          # Windows guard (PreToolUse hook)
   start-claude-remote.ps1         # Windows launcher
   destructive_matchers.rules      # Windows policy rules (.NET regex)
-
-.claude/
-  settings.json                   # Hook configuration (Windows PreToolUse)
+  .claude/settings.json           # Hook configuration (Windows PreToolUse), copied to C:\Base\.claude
 ```
 
 ---
