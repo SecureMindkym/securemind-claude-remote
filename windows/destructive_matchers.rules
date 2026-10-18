@@ -19,6 +19,7 @@ confirm|fork_bomb|:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}
 # ─── FILESYSTEM (Windows-native) ─────────────────────────────────────────────
 
 deny|format_drive|(^|[\s;|&()])format\s+[a-zA-Z]:
+deny|ps_disk_wipe|(?i)\b(Format-Volume|Clear-Disk|Remove-Partition|Initialize-Disk|Reset-PhysicalDisk)\b
 deny|del_windows_system|(^|[\s;|&()])(del|erase)\s+.*\/[sS].*C:\\Windows
 deny|rd_windows_system|(^|[\s;|&()])(rd|rmdir)\s+.*\/[sS].*C:\\Windows
 deny|remove_item_system_recurse|Remove-Item\s+.*(C:\\Windows|C:\\System32).*(Recurse|Force)
